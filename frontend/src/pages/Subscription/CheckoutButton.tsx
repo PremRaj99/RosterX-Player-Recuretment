@@ -10,7 +10,7 @@ export function CheckoutButton() {
       console.log('Redirecting to Stripe checkout session...');
       return { success: true, url: 'https://checkout.stripe.com/...' };
     },
-    onSuccess: (data) => {
+    onSuccess: (_data) => {
       // In a real app: window.location.href = data.url;
     },
   });
