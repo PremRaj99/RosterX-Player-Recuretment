@@ -1,6 +1,5 @@
 export const allowedDomains = [
-  'https://kiratofficial.com',
-  'https://admin.kiratofficial.com',
+  'https://roster-x-player-recuretment.vercel.app',
   'http://localhost:5173',
   'http://localhost:4173',
   'https://xtragateway.site',
