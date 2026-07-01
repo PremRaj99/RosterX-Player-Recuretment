@@ -1,13 +1,19 @@
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
-import { Link } from 'react-router-dom'; // Assuming react-router
+import { Link, useNavigate } from 'react-router-dom';
 import { loginSchema, type LoginFormValues } from '@/validators/schemas';
 import { FormInput } from '@/components/custom/FormInput/FormInput';
 import { Button } from '@/components/ui/button';
 import { FadeInUp } from '@/components/custom/FadeInUp/FadeInUp';
+import { authApi, userApi } from '@/services/api';
+import { useCurrUser } from '@/store/userStore';
+import { toast } from 'sonner';
 
 export default function LoginPage() {
+  const navigate = useNavigate();
+  const setUser = useCurrUser((state) => state.setUser);
+
   const { control, handleSubmit } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
@@ -18,10 +24,38 @@ export default function LoginPage() {
 
   const loginMutation = useMutation({
     mutationFn: async (data: LoginFormValues) => {
-      // Mock network delay
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      console.log('Login Payload:', data);
-      return data;
+      return authApi.login({
+        email: data.email,
+        password: data.password,
+      });
+    },
+    onSuccess: async () => {
+      toast.success('Logged in successfully!');
+
+      try {
+        const fullUser = await userApi.getMe();
+        setUser(fullUser);
+
+        if (fullUser.role === 'organizer') {
+          if (!fullUser.organizations || fullUser.organizations.length === 0) {
+            navigate('/onboarding');
+          } else {
+            navigate('/org/dashboard');
+          }
+        } else {
+          if (!fullUser.playerProfile) {
+            navigate('/onboarding');
+          } else {
+            navigate('/dashboard');
+          }
+        }
+      } catch (err) {
+        console.error(err);
+        toast.error('Failed to load user profile');
+      }
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Login failed. Please check your credentials.');
     },
   });
 

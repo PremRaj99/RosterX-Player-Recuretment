@@ -1,7 +1,7 @@
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   playerRegistrationSchema,
   type PlayerRegistrationFormValues,
@@ -13,10 +13,16 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Label } from '@/components/ui/label';
 import { FadeInUp } from '@/components/custom/FadeInUp/FadeInUp';
+import { authApi, userApi } from '@/services/api';
+import { useCurrUser } from '@/store/userStore';
+import { toast } from 'sonner';
 
 const GAME_ROLES = ['Entry Fragger', 'Support', 'IGL', 'Lurker', 'AWPer'];
 
 export default function RegisterPage() {
+  const navigate = useNavigate();
+  const setUser = useCurrUser((state) => state.setUser);
+
   // --- Player Form Setup ---
   const playerForm = useForm<PlayerRegistrationFormValues>({
     resolver: zodResolver(playerRegistrationSchema),
@@ -25,8 +31,27 @@ export default function RegisterPage() {
 
   const playerMutation = useMutation({
     mutationFn: async (data: PlayerRegistrationFormValues) => {
-      await new Promise((res) => setTimeout(res, 1000));
-      console.log('Player Reg:', data);
+      // 1. Register player account
+      await authApi.register({
+        email: data.email,
+        password: data.password,
+        username: data.username,
+        displayName: data.username,
+        role: 'player',
+      });
+
+      // 2. Fetch profile details (since register automatically logs in and sets cookies)
+      const fullUser = await userApi.getMe();
+      setUser(fullUser);
+      return data;
+    },
+    onSuccess: (data) => {
+      toast.success('Account created! Let\'s complete your player profile.');
+      // Pass the roles list to onboarding page via navigation state
+      navigate('/onboarding', { state: { roles: data.gameRoles } });
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Registration failed.');
     },
   });
 
@@ -38,8 +63,27 @@ export default function RegisterPage() {
 
   const orgMutation = useMutation({
     mutationFn: async (data: OrgRegistrationFormValues) => {
-      await new Promise((res) => setTimeout(res, 1000));
-      console.log('Org Reg:', data);
+      // 1. Register organization account
+      const username = data.orgName.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+      await authApi.register({
+        email: data.email,
+        password: data.password,
+        username,
+        displayName: data.orgName,
+        role: 'organizer',
+      });
+
+      // 2. Fetch profile details
+      const fullUser = await userApi.getMe();
+      setUser(fullUser);
+      return data;
+    },
+    onSuccess: (data) => {
+      toast.success('Account created! Let\'s complete your organization profile.');
+      navigate('/onboarding', { state: { orgName: data.orgName, website: data.website } });
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message || 'Registration failed.');
     },
   });
 

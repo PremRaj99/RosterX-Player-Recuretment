@@ -147,7 +147,7 @@ export default function HomePage() {
               size="lg"
               className="bg-primary hover:bg-primary/90 text-primary-foreground h-14 rounded-sm px-10 font-bold tracking-widest uppercase"
             >
-              <Link to="/jobs">BROWSE OPENINGS</Link>
+              <Link to="/board">BROWSE OPENINGS</Link>
             </Button>
           </div>
         </section>

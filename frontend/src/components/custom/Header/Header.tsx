@@ -1,16 +1,38 @@
-import { Menu, Gamepad2 } from 'lucide-react';
+import { Menu, Gamepad2, Bell, MessageSquare, Settings as SettingsIcon, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Link, useNavigate } from 'react-router-dom';
-
-const navLinks = [
-  { label: 'Players', href: '/players' },
-  { label: 'Teams', href: '/teams' },
-  { label: 'Tournaments', href: '/tournaments' },
-];
+import { useCurrUser } from '@/store/userStore';
 
 export default function Header() {
   const navigate = useNavigate();
+  const { user, removeUser } = useCurrUser();
+
+  const handleLogout = () => {
+    removeUser();
+    navigate('/login');
+  };
+
+  const isLoggedIn = !!user.id;
+
+  // Build nav links based on role
+  const navLinks = isLoggedIn
+    ? user.role === 'organizer'
+      ? [
+          { label: 'Org Dashboard', href: '/org/dashboard' },
+          { label: 'Manage Teams', href: '/org/teams/manage' },
+          { label: 'Recruitments', href: '/org/recruitments/manage' },
+          { label: 'Applications', href: '/org/applications' },
+          { label: 'Scout Players', href: '/scout' },
+          { label: 'Recruitment Board', href: '/board' },
+        ]
+      : [
+          { label: 'Player Dashboard', href: '/dashboard' },
+          { label: 'Recruitment Board', href: '/board' },
+        ]
+    : [
+        { label: 'Recruitment Board', href: '/board' },
+      ];
 
   return (
     <header className="border-border bg-background/95 supports-backdrop-filter:bg-background/60 sticky top-0 z-50 w-full border-b backdrop-blur">
@@ -18,7 +40,7 @@ export default function Header() {
         {/* Logo & Slogan */}
         <div className="flex items-center gap-3">
           <Link to="/" className="group flex items-center gap-2">
-            <div className="bg-primary flex items-center justify-center rounded-sm p-1.5">
+            <div className="bg-primary flex items-center justify-center rounded-sm p-1.5 animate-pulse">
               <Gamepad2 className="text-primary-foreground h-5 w-5" />
             </div>
             <div className="flex flex-col">
@@ -33,12 +55,12 @@ export default function Header() {
         </div>
 
         {/* Desktop Navigation */}
-        <nav className="hidden items-center gap-8 text-sm font-medium md:flex">
+        <nav className="hidden items-center gap-6 text-sm font-medium md:flex">
           {navLinks.map((link) => (
             <Link
               key={link.label}
               to={link.href}
-              className="text-muted-foreground hover:text-primary transition-colors"
+              className="text-muted-foreground hover:text-primary transition-colors whitespace-nowrap"
             >
               {link.label}
             </Link>
@@ -47,21 +69,74 @@ export default function Header() {
 
         {/* Action Buttons & Mobile Menu */}
         <div className="flex items-center gap-4">
-          <div className="hidden items-center gap-2 md:flex">
-            <Button
-              onClick={() => navigate('/login')}
-              variant="ghost"
-              className="rounded-sm font-semibold tracking-wide"
-            >
-              Log in
-            </Button>
-            <Button
-              onClick={() => navigate('/register')}
-              className="bg-primary text-primary-foreground hover:bg-primary/90 rounded-sm font-semibold tracking-wide"
-            >
-              Join Now
-            </Button>
-          </div>
+          {isLoggedIn ? (
+            <div className="flex items-center gap-3">
+              {/* Inbox Icon */}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => navigate('/inbox')}
+                title="Inbox"
+                className="hover:text-primary rounded-sm"
+              >
+                <MessageSquare className="h-5 w-5" />
+              </Button>
+
+              {/* Notifications Icon */}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => navigate('/notifications')}
+                title="Notifications"
+                className="hover:text-primary rounded-sm"
+              >
+                <Bell className="h-5 w-5" />
+              </Button>
+
+              {/* Settings Icon */}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => navigate('/settings')}
+                title="Settings"
+                className="hover:text-primary rounded-sm"
+              >
+                <SettingsIcon className="h-5 w-5" />
+              </Button>
+
+              {/* Display Name */}
+              <span className="text-muted-foreground hidden text-sm font-semibold sm:inline-block">
+                {user.displayName}
+              </span>
+
+              {/* Logout Button */}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleLogout}
+                title="Log out"
+                className="hover:text-destructive rounded-sm"
+              >
+                <LogOut className="h-5 w-5" />
+              </Button>
+            </div>
+          ) : (
+            <div className="hidden items-center gap-2 md:flex">
+              <Button
+                onClick={() => navigate('/login')}
+                variant="ghost"
+                className="rounded-sm font-semibold tracking-wide"
+              >
+                Log in
+              </Button>
+              <Button
+                onClick={() => navigate('/register')}
+                className="bg-primary text-primary-foreground hover:bg-primary/90 rounded-sm font-semibold tracking-wide"
+              >
+                Join Now
+              </Button>
+            </div>
+          )}
 
           {/* Mobile Sheet Menu */}
           <Sheet>
@@ -73,7 +148,7 @@ export default function Header() {
             </SheetTrigger>
             <SheetContent
               side="right"
-              className="border-border bg-accent-foreground text-accent w-75 border-l px-4 sm:w-100"
+              className="border-border bg-card text-card-foreground w-75 border-l px-4 sm:w-100"
             >
               <nav className="mt-8 flex flex-col gap-6">
                 <div className="mb-4 flex flex-col gap-1">
@@ -86,26 +161,28 @@ export default function Header() {
                   <Link
                     key={link.label}
                     to={link.href}
-                    className="text-shadow-muted-foreground hover:text-primary text-lg font-semibold transition-colors"
+                    className="text-muted-foreground hover:text-primary text-lg font-semibold transition-colors"
                   >
                     {link.label}
                   </Link>
                 ))}
-                <div className="border-border mt-4 flex flex-col gap-3 border-t pt-6">
-                  <Button
-                    variant="outline"
-                    className="text-accent border-border w-full rounded-sm"
-                    onClick={() => navigate('/login')}
-                  >
-                    Log in
-                  </Button>
-                  <Button
-                    onClick={() => navigate('/register')}
-                    className="bg-primary hover:bg-primary/90 w-full rounded-sm"
-                  >
-                    Join Now
-                  </Button>
-                </div>
+                {!isLoggedIn && (
+                  <div className="border-border mt-4 flex flex-col gap-3 border-t pt-6">
+                    <Button
+                      variant="outline"
+                      className="border-border w-full rounded-sm"
+                      onClick={() => navigate('/login')}
+                    >
+                      Log in
+                    </Button>
+                    <Button
+                      onClick={() => navigate('/register')}
+                      className="bg-primary hover:bg-primary/90 w-full rounded-sm"
+                    >
+                      Join Now
+                    </Button>
+                  </div>
+                )}
               </nav>
             </SheetContent>
           </Sheet>

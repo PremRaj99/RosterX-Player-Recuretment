@@ -1,11 +1,10 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-// import { useIsLoggedIn } from '@/hooks/isLoggedIn';
+import { useIsLoggedIn } from '@/hooks/isLoggedIn';
 
 export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
-  // const isLoggedInStatus = useIsLoggedIn();
-  const isLoggedInStatus = true;
+  const isLoggedInStatus = useIsLoggedIn();
 
   useEffect(() => {
     if (!isLoggedInStatus) {
@@ -14,7 +13,11 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   }, [isLoggedInStatus, navigate]);
 
   if (!isLoggedInStatus) {
-    return <p>Checking authentication...</p>;
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <p className="text-muted-foreground animate-pulse">Checking authentication...</p>
+      </div>
+    );
   }
 
   return <>{children}</>;

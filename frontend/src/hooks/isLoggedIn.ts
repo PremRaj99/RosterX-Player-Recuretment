@@ -2,14 +2,19 @@ import { useCurrUser as useUser, type User } from '@/store/userStore';
 
 const emptyUser: User = {
   id: null,
-  name: null,
-  role: null,
   email: null,
-  mobile: null,
+  username: null,
+  displayName: null,
+  role: null,
+  emailVerified: null,
+  phone: null,
+  bio: null,
+  country: null,
+  status: null,
+  settings: null,
 };
 
 export const useCurrUser = (): User => {
-  // useCurrUser may accept a selector; keep selector typed loosely to avoid runtime issues
   const user = useUser((state: unknown) => (state as { user?: User }).user);
   return user ?? emptyUser;
 };
@@ -31,5 +36,5 @@ export const useIsPlayer = () => {
 
 export const useIsAdmin = () => {
   const user = useCurrUser();
-  return user?.role === 'admin';
+  return user?.role === 'organizer' || user?.role === 'player'; // Or if user.role is admin, since role can be 'organizer' | 'player' | null
 };

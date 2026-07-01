@@ -1,20 +1,28 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-// import { useIsLoggedIn } from '@/hooks/isLoggedIn';
+import { useIsLoggedIn, useCurrUser } from '@/hooks/isLoggedIn';
 
-export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
+export default function AuthRoute({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
-  // const isLoggedInStatus = useIsLoggedIn();
-  const isLoggedInStatus = false;
+  const isLoggedInStatus = useIsLoggedIn();
+  const user = useCurrUser();
 
   useEffect(() => {
     if (isLoggedInStatus) {
-      navigate('/');
+      if (user.role === 'organizer') {
+        navigate('/org/dashboard');
+      } else {
+        navigate('/dashboard');
+      }
     }
-  }, [isLoggedInStatus, navigate]);
+  }, [isLoggedInStatus, user, navigate]);
 
   if (isLoggedInStatus) {
-    return <p>Already authenticated...</p>;
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <p className="text-muted-foreground animate-pulse">Already authenticated...</p>
+      </div>
+    );
   }
 
   return <>{children}</>;

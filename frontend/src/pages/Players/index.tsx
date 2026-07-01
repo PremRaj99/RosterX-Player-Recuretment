@@ -12,97 +12,41 @@ import {
 } from '@/components/ui/select';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { FadeInUp } from '@/components/custom/FadeInUp/FadeInUp';
-import { PlayerCard, type PlayerSummary } from './PlayerCard';
-
-// --- Mock Data Fetcher ---
-const fetchPlayers = async (): Promise<PlayerSummary[]> => {
-  await new Promise((res) => setTimeout(res, 800));
-  return [
-    {
-      id: '1',
-      ign: 'TenZ',
-      fullName: 'Tyson Ngo',
-      game: 'Valorant',
-      roles: ['Entry Fragger', 'Flex'],
-      rank: 'Radiant (Top 10)',
-      region: 'NA',
-      verified: true,
-      status: 'Signed',
-    },
-    {
-      id: '2',
-      ign: 'm0NESY',
-      fullName: 'Ilya Osipov',
-      game: 'CS2',
-      roles: ['AWPer'],
-      rank: 'Faceit Lvl 10',
-      region: 'EU',
-      verified: true,
-      status: 'Signed',
-    },
-    {
-      id: '3',
-      ign: 'RookieSniper',
-      fullName: 'David Kim',
-      game: 'Valorant',
-      roles: ['Controller', 'IGL'],
-      rank: 'Immortal 3',
-      region: 'NA',
-      verified: false,
-      status: 'Lft',
-    },
-    {
-      id: '4',
-      ign: 'ImperialHal',
-      fullName: 'Phillip Dosen',
-      game: 'Apex Legends',
-      roles: ['IGL', 'Fragger'],
-      rank: 'Apex Predator',
-      region: 'NA',
-      verified: true,
-      status: 'Signed',
-    },
-    {
-      id: '5',
-      ign: 'Shadow',
-      fullName: 'Liam Smith',
-      game: 'CS2',
-      roles: ['Lurker', 'Support'],
-      rank: 'Faceit Lvl 9',
-      region: 'EU',
-      verified: false,
-      status: 'Lft',
-    },
-  ];
-};
+import { PlayerCard } from './PlayerCard';
+import { playerApi } from '@/services/api';
 
 export default function PlayersPage() {
   const [search, setSearch] = useState('');
   const [gameFilter, setGameFilter] = useState('all');
   const [roleFilter, setRoleFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('lft'); // Default to showing free agents
+  const [statusFilter, setStatusFilter] = useState('all');
 
   const { data: players = [], isLoading } = useQuery({
-    queryKey: ['players'],
-    queryFn: fetchPlayers,
+    queryKey: ['players', gameFilter, roleFilter],
+    queryFn: () =>
+      playerApi.list({
+        game: gameFilter === 'all' ? undefined : gameFilter,
+        role: roleFilter === 'all' ? undefined : roleFilter,
+      }),
   });
 
   const filteredPlayers = useMemo(() => {
-    return players.filter((player) => {
+    return players.filter((player: any) => {
+      const ign = player.user?.displayName || '';
+      const fullName = player.user?.username || '';
       const matchesSearch =
-        player.ign.toLowerCase().includes(search.toLowerCase()) ||
-        player.fullName.toLowerCase().includes(search.toLowerCase());
-      const matchesGame =
-        gameFilter === 'all' || player.game.toLowerCase() === gameFilter.toLowerCase();
-      const matchesRole =
-        roleFilter === 'all' ||
-        player.roles.some((r) => r.toLowerCase() === roleFilter.toLowerCase());
-      const matchesStatus =
-        statusFilter === 'all' || player.status.toLowerCase() === statusFilter.toLowerCase();
+        ign.toLowerCase().includes(search.toLowerCase()) ||
+        fullName.toLowerCase().includes(search.toLowerCase());
 
-      return matchesSearch && matchesGame && matchesRole && matchesStatus;
+      const isSigned = !!player.teamId;
+      const matchesStatus =
+        statusFilter === 'all' ||
+        (statusFilter === 'lft' && !isSigned) ||
+        (statusFilter === 'signed' && isSigned);
+
+      return matchesSearch && matchesStatus;
     });
-  }, [players, search, gameFilter, roleFilter, statusFilter]);
+  }, [players, search, statusFilter]);
 
   // Shared filter UI
   const FilterControls = () => (
@@ -131,9 +75,9 @@ export default function PlayersPage() {
             <SelectValue placeholder="All Statuses" />
           </SelectTrigger>
           <SelectContent className="bg-card border-border">
+            <SelectItem value="all">All Players</SelectItem>
             <SelectItem value="lft">Looking for Team (LFT)</SelectItem>
             <SelectItem value="signed">Currently Signed</SelectItem>
-            <SelectItem value="all">All Players</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -148,9 +92,11 @@ export default function PlayersPage() {
           </SelectTrigger>
           <SelectContent className="bg-card border-border">
             <SelectItem value="all">All Games</SelectItem>
-            <SelectItem value="valorant">Valorant</SelectItem>
-            <SelectItem value="cs2">CS2</SelectItem>
-            <SelectItem value="apex legends">Apex Legends</SelectItem>
+            <SelectItem value="Valorant">Valorant</SelectItem>
+            <SelectItem value="CS2">CS2</SelectItem>
+            <SelectItem value="Apex Legends">Apex Legends</SelectItem>
+            <SelectItem value="Overwatch 2">Overwatch 2</SelectItem>
+            <SelectItem value="League of Legends">League of Legends</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -165,13 +111,11 @@ export default function PlayersPage() {
           </SelectTrigger>
           <SelectContent className="bg-card border-border">
             <SelectItem value="all">All Roles</SelectItem>
-            <SelectItem value="entry fragger">Entry Fragger</SelectItem>
-            <SelectItem value="igl">IGL</SelectItem>
-            <SelectItem value="awper">AWPer</SelectItem>
-            <SelectItem value="controller">Controller</SelectItem>
-            <SelectItem value="support">Support</SelectItem>
-            <SelectItem value="flex">Flex</SelectItem>
-            <SelectItem value="lurker">Lurker</SelectItem>
+            <SelectItem value="Duelist">Duelist</SelectItem>
+            <SelectItem value="IGL">IGL</SelectItem>
+            <SelectItem value="Sentinel">Sentinel</SelectItem>
+            <SelectItem value="Support">Support</SelectItem>
+            <SelectItem value="Entry Fragger">Entry Fragger</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -212,7 +156,7 @@ export default function PlayersPage() {
       {/* Main Feed */}
       <main className="min-w-0 flex-1">
         {isLoading ? (
-          <div className="text-muted-foreground flex justify-center py-20 text-sm font-bold tracking-widest uppercase">
+          <div className="text-muted-foreground flex justify-center py-20 text-sm font-bold tracking-widest uppercase animate-pulse">
             LOADING TALENT POOL...
           </div>
         ) : filteredPlayers.length === 0 ? (
@@ -224,8 +168,21 @@ export default function PlayersPage() {
           </div>
         ) : (
           <FadeInUp className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            {filteredPlayers.map((player) => (
-              <PlayerCard key={player.id} player={player} />
+            {filteredPlayers.map((player: any) => (
+              <PlayerCard
+                key={player.id}
+                player={{
+                  id: player.id,
+                  ign: player.user?.displayName || 'Unknown',
+                  fullName: player.user?.username ? `@${player.user.username}` : '',
+                  game: player.mainGame,
+                  roles: [player.primaryRole],
+                  rank: player.rank,
+                  region: player.user?.country || 'Global',
+                  verified: player.verified,
+                  status: player.teamId ? 'Signed' : 'Lft',
+                }}
+              />
             ))}
           </FadeInUp>
         )}
