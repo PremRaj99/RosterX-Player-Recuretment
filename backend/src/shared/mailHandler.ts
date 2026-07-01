@@ -7,7 +7,7 @@ export const sendMail = async (email: string, subject: string, text: string, htm
   // Create a transporter object using SMTP transport
   try {
     const transporter = nodemailer.createTransport({
-      host: 'smtp.hostinger.com',
+      host: 'smtp.gmail.com',
       port: 465,
       auth: {
         user: SENDING_EMAIL,
@@ -15,7 +15,7 @@ export const sendMail = async (email: string, subject: string, text: string, htm
       },
     });
     await transporter.sendMail({
-      from: `"Physiobuddies" <${SENDING_EMAIL}>`,
+      from: `"RosterX" <${SENDING_EMAIL}>`,
       to: email,
       subject: subject,
       text: text,

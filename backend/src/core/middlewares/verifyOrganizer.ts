@@ -1,10 +1,10 @@
 import { asyncHandler } from '../response/responseHandler';
 import { ForbiddenError } from '../errors/ApiError';
-export const TherapistOnly = asyncHandler((req, _res, next) => {
+export const OrganizerOnly = asyncHandler((req, _res, next) => {
   if (!req.user) {
     throw new ForbiddenError();
   }
-  if (req.user.role !== 'therapist') {
+  if (req.user.role !== 'organizer') {
     throw new ForbiddenError();
   }
   next();
