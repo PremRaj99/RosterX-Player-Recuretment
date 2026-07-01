@@ -40,7 +40,7 @@ export const setupLogWebSocket = (app: Express) => {
   });
 
   // 2. Listen for new lines automatically
-  tail.on('line', (data) => {
+  tail.on('line', (data: string) => {
     const log = JSON.parse(data);
     const logString = JSON.stringify(log);
 
@@ -52,7 +52,7 @@ export const setupLogWebSocket = (app: Express) => {
     });
   });
 
-  tail.on('error', (error) => {
+  tail.on('error', (error: Error) => {
     logger.error('Tail stream error:', error);
   });
 
