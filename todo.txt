@@ -1,0 +1,641 @@
+# LiyonForge MERN Migration Guide & Architecture Blueprint
+
+This document provides a comprehensive system summary and step-by-step transition blueprint for migrating the **LiyonForge** platform from its current architecture (Vanilla HTML/CSS/JS frontend + planned Flask/SQLite backend) to a modern, production-ready **MERN (MongoDB, Express, React, Node.js)** stack.
+
+---
+
+## 1. System Overview & Core Capabilities
+
+LiyonForge is an esports recruitment and ecosystem platform that connects competitive players, teams, organizations, tournament organizers, sponsors, and platform administrators.
+
+### Core Modules & Roles
+The platform supports **11 distinct user roles** with custom dashboards and workflows:
+1. **Player:** Build profiles (stats, games, achievements), search organizations, and apply to recruitments.
+2. **Team Captain / Team Manager:** Create and manage team rosters, invite/remove players, and register for tournaments.
+3. **Coach / Analyst:** Specialized support roles with dashboard access to team performance and stats.
+4. **Org Recruiter / Org Admin:** Post recruitments, review applications, sign team rosters, request sponsorship deals, and verify organizations.
+5. **Tournament Organizer:** Create tournaments, manage registrations, and update live brackets.
+6. **Sponsor:** Discover organizations and players, submit and track sponsorship proposals.
+7. **Platform Administrator / Moderator:** Global moderation queue, user/org verification, audit logs, and system health monitoring.
+
+---
+
+## 2. Database Schema Migration: SQL to MongoDB (Mongoose)
+
+In a relational database (SQL), data is normalized across many tables with Foreign Keys. In MongoDB, we design documents for high read efficiency by leveraging **embedding** for nested/private data (like user settings and notification preferences) and **referencing** (using `mongoose.Schema.Types.ObjectId`) for shared entities (like players in a team, or messages in a thread).
+
+Below is the design for the Mongoose Schemas.
+
+### 2.1. User & Player Models (Unified Schema with Discriminators or Refs)
+Since players are an extension of users, we can represent them as a single `User` collection containing general auth data, with player-specific details stored either in an embedded object or as a separate collection referenced by ID. Below, we use a reference model for players to keep org/sponsor account documents lightweight.
+
+```javascript
+// models/User.js
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+
+const UserSchema = new mongoose.Schema({
+  email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+  passwordHash: { type: String, required: true },
+  username: { type: String, required: true, unique: true, trim: true },
+  displayName: { type: String, required: true },
+  role: { 
+    type: String, 
+    enum: ['guest', 'player', 'captain', 'manager', 'recruiter', 'org_admin', 'organizer', 'sponsor', 'coach', 'analyst', 'moderator', 'platform_admin'], 
+    default: 'player' 
+  },
+  emailVerified: { type: Boolean, default: false },
+  phone: { type: String, default: null },
+  phoneVerified: { type: Boolean, default: false },
+  avatarUrl: { type: String, default: null },
+  bio: { type: String, default: null },
+  country: { type: String, default: null },
+  status: { type: String, enum: ['active', 'suspended', 'banned', 'deleted'], default: 'active' },
+  twoFactorEnabled: { type: Boolean, default: false },
+  settings: {
+    profileVisibility: { type: String, enum: ['public', 'followers', 'private'], default: 'public' },
+    showOnlineStatus: { type: Boolean, default: true },
+    allowDirectMessages: { type: Boolean, default: true },
+    showInSearch: { type: Boolean, default: true },
+    theme: { type: String, enum: ['dark', 'light'], default: 'dark' },
+    language: { type: String, default: 'en' },
+    region: { type: String, default: null },
+    notificationPrefs: {
+      recruitment: { type: Boolean, default: true },
+      applications: { type: Boolean, default: true },
+      messages: { type: Boolean, default: true },
+      teams: { type: Boolean, default: true },
+      organizations: { type: Boolean, default: true },
+      sponsors: { type: Boolean, default: true },
+      tournaments: { type: Boolean, default: true },
+      platform: { type: Boolean, default: true },
+      security: { type: Boolean, default: true }
+    }
+  }
+}, { timestamps: true });
+
+UserSchema.pre('save', async function(next) {
+  if (!this.isModified('passwordHash')) return next();
+  try {
+    const salt = await bcrypt.genSalt(10);
+    this.passwordHash = await bcrypt.hash(this.passwordHash, salt);
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
+
+UserSchema.methods.comparePassword = async function(candidatePassword) {
+  return bcrypt.compare(candidatePassword, this.passwordHash);
+};
+
+module.exports = mongoose.model('User', UserSchema);
+```
+
+```javascript
+// models/Player.js
+const mongoose = require('mongoose');
+
+const PlayerSchema = new mongoose.Schema({
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
+  mainGame: { type: String, required: true },
+  primaryRole: { type: String, required: true },
+  rank: { type: String, required: true },
+  verified: { type: Boolean, default: false },
+  team: { type: mongoose.Schema.Types.ObjectId, ref: 'Team', default: null },
+  stats: {
+    kdRatio: { type: Number, default: 0 },
+    winRate: { type: Number, default: 0 },
+    matchesPlayed: { type: Number, default: 0 },
+    mvpCount: { type: Number, default: 0 }
+  },
+  achievements: [{
+    title: { type: String, required: true },
+    description: { type: String },
+    awardedAt: { type: Date, default: Date.now }
+  }]
+}, { timestamps: true });
+
+module.exports = mongoose.model('Player', PlayerSchema);
+```
+
+### 2.2. Organization & Team Models
+```javascript
+// models/Organization.js
+const mongoose = require('mongoose');
+const slugify = require('slugify');
+
+const OrganizationSchema = new mongoose.Schema({
+  owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  name: { type: String, required: true, unique: true },
+  slug: { type: String, unique: true },
+  logoUrl: { type: String, default: null },
+  games: [{ type: String }],
+  description: { type: String, default: null },
+  verified: { type: Boolean, default: false },
+  verifiedAt: { type: Date, default: null },
+  rosterSize: { type: Number, default: 0 } // Denormalized helper
+}, { timestamps: true });
+
+OrganizationSchema.pre('save', function(next) {
+  if (this.isModified('name')) {
+    this.slug = slugify(this.name, { lower: true, strict: true });
+  }
+  next();
+});
+
+module.exports = mongoose.model('Organization', OrganizationSchema);
+```
+
+```javascript
+// models/Team.js
+const mongoose = require('mongoose');
+
+const TeamSchema = new mongoose.Schema({
+  organization: { type: mongoose.Schema.Types.ObjectId, ref: 'Organization', default: null },
+  name: { type: String, required: true },
+  game: { type: String, required: true },
+  logoUrl: { type: String, default: null },
+  winRate: { type: Number, default: 0 },
+  members: [{
+    player: { type: mongoose.Schema.Types.ObjectId, ref: 'Player', required: true },
+    roleOnTeam: { type: String, default: 'Member' }, // e.g., captain, substitute, coach
+    joinedAt: { type: Date, default: Date.now }
+  }]
+}, { timestamps: true });
+
+module.exports = mongoose.model('Team', TeamSchema);
+```
+
+### 2.3. Recruitment, Application & Sponsorship Models
+```javascript
+// models/Recruitment.js
+const mongoose = require('mongoose');
+
+const RecruitmentSchema = new mongoose.Schema({
+  organization: { type: mongoose.Schema.Types.ObjectId, ref: 'Organization', required: true },
+  title: { type: String, required: true },
+  game: { type: String, required: true },
+  roleNeeded: { type: String, required: true },
+  description: { type: String, required: true },
+  status: { type: String, enum: ['open', 'closed', 'flagged', 'removed'], default: 'open' }
+}, { timestamps: true });
+
+module.exports = mongoose.model('Recruitment', RecruitmentSchema);
+```
+
+```javascript
+// models/Application.js
+const mongoose = require('mongoose');
+
+const ApplicationSchema = new mongoose.Schema({
+  recruitment: { type: mongoose.Schema.Types.ObjectId, ref: 'Recruitment', default: null }, // Optional if direct to org
+  organization: { type: mongoose.Schema.Types.ObjectId, ref: 'Organization', required: true },
+  player: { type: mongoose.Schema.Types.ObjectId, ref: 'Player', required: true },
+  message: { type: String, default: null },
+  status: { type: String, enum: ['pending', 'accepted', 'rejected', 'withdrawn'], default: 'pending' },
+  decidedAt: { type: Date, default: null }
+}, { timestamps: true });
+
+module.exports = mongoose.model('Application', ApplicationSchema);
+```
+
+```javascript
+// models/SponsorshipRequest.js
+const mongoose = require('mongoose');
+
+const SponsorshipRequestSchema = new mongoose.Schema({
+  sponsor: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }, // User with role: sponsor
+  organization: { type: mongoose.Schema.Types.ObjectId, ref: 'Organization', required: true },
+  value: { type: String, required: true }, // Currency amount or "product"
+  durationMonths: { type: Number, required: true },
+  status: { type: String, enum: ['pending', 'approved', 'declined', 'active', 'completed'], default: 'pending' },
+  decidedAt: { type: Date, default: null }
+}, { timestamps: true });
+
+module.exports = mongoose.model('SponsorshipRequest', SponsorshipRequestSchema);
+```
+
+### 2.4. Messaging & Notifications
+```javascript
+// models/ChatThread.js
+const mongoose = require('mongoose');
+
+const ChatThreadSchema = new mongoose.Schema({
+  participants: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  lastMessage: { type: mongoose.Schema.Types.ObjectId, ref: 'ChatMessage', default: null }
+}, { timestamps: true });
+
+module.exports = mongoose.model('ChatThread', ChatThreadSchema);
+```
+
+```javascript
+// models/ChatMessage.js
+const mongoose = require('mongoose');
+
+const ChatMessageSchema = new mongoose.Schema({
+  thread: { type: mongoose.Schema.Types.ObjectId, ref: 'ChatThread', required: true },
+  sender: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  text: { type: String, required: true },
+  readBy: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }]
+}, { timestamps: true });
+
+module.exports = mongoose.model('ChatMessage', ChatMessageSchema);
+```
+
+```javascript
+// models/Notification.js
+const mongoose = require('mongoose');
+
+const NotificationSchema = new mongoose.Schema({
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  category: { 
+    type: String, 
+    enum: ['recruitment', 'applications', 'messages', 'teams', 'organizations', 'sponsors', 'tournaments', 'platform', 'security', 'verification'],
+    required: true 
+  },
+  title: { type: String, required: true },
+  body: { type: String, default: null },
+  read: { type: Boolean, default: false }
+}, { timestamps: true });
+
+module.exports = mongoose.model('Notification', NotificationSchema);
+```
+
+---
+
+## 3. Node.js & Express Backend Architecture
+
+A robust Node/Express layout mirrors the clean division of responsibilities originally planned for the Flask server, separating routes, controllers, middleware, and business logic services.
+
+### Recommended Directory Layout
+```
+backend/
+├── config/
+│   ├── db.js                 # MongoDB connection logic
+│   └── index.js              # Environment variable configurations
+├── middleware/
+│   ├── auth.js               # JWT verification & currentUser insertion
+│   ├── roles.js              # Role authorization gatekeeper
+│   └── errorHandler.js       # Centralized error handler
+├── models/                   # Mongoose models defined above
+│   ├── User.js
+│   ├── Player.js
+│   ├── Organization.js
+│   ├── Team.js
+│   ├── Recruitment.js
+│   ├── Application.js
+│   ├── SponsorshipRequest.js
+│   ├── ChatThread.js
+│   ├── ChatMessage.js
+│   └── Notification.js
+├── controllers/              # Request parsing, service calls, response shaping
+│   ├── authController.js
+│   ├── playerController.js
+│   ├── orgController.js
+│   ├── teamController.js
+│   └── chatController.js
+├── routes/                   # API routes binding endpoints to controllers
+│   ├── authRoutes.js
+│   ├── playerRoutes.js
+│   ├── orgRoutes.js
+│   ├── teamRoutes.js
+│   ├── chatRoutes.js
+│   └── index.js              # Root router mounting sub-routers (/api/v1)
+├── services/                 # Business logic, email stubs, cloud file storage
+│   ├── emailService.js
+│   ├── uploadService.js
+│   └── socketService.js      # WebSocket controller (real-time chat/notifs)
+├── server.js                 # Main Express server bootstrapper
+└── package.json
+```
+
+### 3.1. Main Server & Database Configuration
+```javascript
+// server.js
+const express = require('express');
+const cors = require('cors');
+const http = require('http');
+const connectDB = require('./config/db');
+const routes = require('./routes');
+const errorHandler = require('./middleware/errorHandler');
+const { initSocket } = require('./services/socketService');
+const config = require('./config');
+
+const app = express();
+const server = http.createServer(app);
+
+// Connect MongoDB
+connectDB();
+
+// Middlewares
+app.use(cors({ origin: config.allowedOrigins, credentials: true }));
+app.use(express.json());
+
+// API Routes
+app.use('/api/v1', routes);
+
+// Centralized Error Handling
+app.use(errorHandler);
+
+// Initialize WebSockets for real-time messaging
+initSocket(server);
+
+const PORT = config.port || 5000;
+server.listen(PORT, () => {
+  console.log(`LiyonForge backend running on port ${PORT} in ${config.env} mode.`);
+});
+```
+
+### 3.2. Middleware: Auth Token Verification & Role-Gating
+```javascript
+// middleware/auth.js
+const jwt = require('jsonwebtoken');
+const User = require('../models/User');
+const config = require('../config');
+
+exports.protect = async (req, res, next) => {
+  let token;
+  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+    token = req.headers.authorization.split(' ')[1];
+  }
+
+  if (!token) {
+    return res.status(401).json({ error: 'UNAUTHENTICATED', message: 'Not authorized, token missing.' });
+  }
+
+  try {
+    const decoded = jwt.verify(token, config.jwtSecret);
+    const user = await User.findById(decoded.id).select('-passwordHash');
+    if (!user || user.status === 'deleted' || user.status === 'banned') {
+      return res.status(401).json({ error: 'UNAUTHENTICATED', message: 'Account inactive or deleted.' });
+    }
+    req.user = user;
+    next();
+  } catch (error) {
+    return res.status(401).json({ error: 'UNAUTHENTICATED', message: 'Invalid or expired token.' });
+  }
+};
+
+// middleware/roles.js
+exports.authorizeRoles = (...allowedRoles) => {
+  return (req, res, next) => {
+    if (!req.user || !allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({ error: 'FORBIDDEN', message: 'Insufficient privileges to access this resource.' });
+    }
+    next();
+  };
+};
+```
+
+---
+
+## 4. React Frontend Migration & Components
+
+Instead of static HTML files loaded by single JS scripts, the React frontend organizes pages as modular components, state managers, and custom hooks.
+
+### Recommended Directory Layout
+```
+frontend/
+├── public/
+├── src/
+│   ├── assets/               # Fonts, local images, base css design tokens
+│   ├── components/           # Reusable UI widgets
+│   │   ├── Sidebar.jsx
+│   │   ├── RosterGrid.jsx
+│   │   ├── StatCard.jsx
+│   │   └── CommandPalette.jsx
+│   ├── context/              # Global state providers
+│   │   ├── AuthContext.jsx   # Keeps track of currentUser, token, login state
+│   │   └── ThemeContext.jsx
+│   ├── hooks/                # Custom React Hooks
+│   │   ├── useFetch.js
+│   │   └── useSocket.js
+│   ├── pages/                # Screens corresponding to HTML files
+│   │   ├── Home.jsx
+│   │   ├── Login.jsx
+│   │   ├── SearchPlayers.jsx
+│   │   ├── OrgDashboard.jsx
+│   │   ├── TeamProfile.jsx
+│   │   └── Settings.jsx
+│   ├── services/             # Axios API wrapper replacing services/*.js
+│   │   ├── api.js
+│   │   ├── playerService.js
+│   │   └── orgService.js
+│   ├── App.jsx               # Routes definition (React Router v6)
+│   └── main.jsx
+├── package.json
+└── vite.config.js
+```
+
+### 4.1. Global Auth Context Provider
+This context replaces standard window-level global assignments, handling token storage, login/logout, and user object sync.
+```jsx
+// src/context/AuthContext.jsx
+import React, { createContext, useState, useEffect } from 'react';
+import api from '../services/api';
+
+export const AuthContext = createContext();
+
+export const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      api.get('/auth/me')
+        .then(res => setUser(res.data.user))
+        .catch(() => logout())
+        .finally(() => setLoading(false));
+    } else {
+      setLoading(false);
+    }
+  }, []);
+
+  const login = async (email, password) => {
+    const res = await api.post('/auth/login', { email, password });
+    const { token, user: userData } = res.data;
+    localStorage.setItem('token', token);
+    api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    setUser(userData);
+    return userData;
+  };
+
+  const logout = () => {
+    localStorage.removeItem('token');
+    delete api.defaults.headers.common['Authorization'];
+    setUser(null);
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, loading, login, logout }}>
+      {!loading && children}
+    </AuthContext.Provider>
+  );
+};
+```
+
+### 4.2. Example Component Refactoring: Team Roster
+Below is an example of migrating `team-profile.html` (which lists team rosters and permits actions based on player state) to a reactive, responsive React functional component.
+
+```jsx
+// src/pages/TeamProfile.jsx
+import React, { useState, useEffect, useContext } from 'react';
+import { useParams, Link } from 'react-router-dom';
+import api from '../services/api';
+import { AuthContext } from '../context/AuthContext';
+
+export default function TeamProfile() {
+  const { id } = useParams();
+  const { user } = useContext(AuthContext);
+  const [team, setTeam] = useState(null);
+  const [roster, setRoster] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const fetchTeamData = async () => {
+      try {
+        setLoading(true);
+        const teamRes = await api.get(`/teams/${id}`);
+        const rosterRes = await api.get(`/teams/${id}/roster`);
+        setTeam(teamRes.data.team);
+        setRoster(rosterRes.data.roster);
+      } catch (err) {
+        setError(err.response?.data?.message || 'Error loading team profile');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchTeamData();
+  }, [id]);
+
+  const handleRemoveMember = async (playerId) => {
+    if (!window.confirm('Are you sure you want to remove this member?')) return;
+    try {
+      await api.delete(`/teams/${id}/members/${playerId}`);
+      setRoster(roster.filter(member => member.id !== playerId));
+    } catch (err) {
+      alert(err.response?.data?.message || 'Action failed');
+    }
+  };
+
+  if (loading) return <div className="spinner-loader">Loading Team Details...</div>;
+  if (error) return <div className="alert alert-danger">{error}</div>;
+
+  const isManager = user && (user.role === 'manager' || user.role === 'org_admin' || user.id === team.managerId);
+
+  return (
+    <div className="container py-5">
+      <div className="d-flex align-items-center mb-4">
+        {team.logoUrl && <img src={team.logoUrl} alt={team.name} className="team-logo me-3" style={{ width: '80px', height: '80px', borderRadius: '12px' }} />}
+        <div>
+          <h1 className="h2 text-white mb-1">{team.name}</h1>
+          <p className="text-muted mb-0">{team.game} • Win Rate: {team.winRate}%</p>
+        </div>
+      </div>
+
+      <div className="card bg-dark text-white border-secondary p-4">
+        <h3 className="h5 mb-4">Roster Roster Members</h3>
+        <div className="table-responsive">
+          <table className="table table-dark table-hover border-secondary alignment-middle">
+            <thead>
+              <tr>
+                <th>Player Name</th>
+                <th>Game Role</th>
+                <th>Rank</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {roster.length === 0 ? (
+                <tr><td colSpan="4" className="text-center text-muted">No members currently on the team.</td></tr>
+              ) : roster.map((member) => (
+                <tr key={member.id}>
+                  <td>
+                    <Link to={`/players/${member.id}`} className="text-decoration-none text-info font-weight-bold">
+                      {member.displayName}
+                    </Link>
+                  </td>
+                  <td>{member.primaryRole}</td>
+                  <td><span className="badge bg-secondary">{member.rank}</span></td>
+                  <td>
+                    {isManager && (
+                      <button className="btn btn-outline-danger btn-sm" onClick={() => handleRemoveMember(member.id)}>
+                        Remove
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+---
+
+## 5. Step-by-Step MERN Migration Guide
+
+Follow this sequential blueprint to bootstrap, write, and deploy the new codebase.
+
+### Phase A: Setup the Node/Express + MongoDB API Backend
+1. **Initialize Backend**: Run `npm init -y` inside a new `backend` folder. Install dependencies: `express`, `mongoose`, `jsonwebtoken`, `bcryptjs`, `cors`, `dotenv`, `slugify`. Add developer tooling like `nodemon`.
+2. **Database Connection**: Set up a MongoDB cluster (local or MongoDB Atlas) and wire `config/db.js` using Mongoose.
+3. **Mongoose Schemas**: Port all tables in `DATABASE_SCHEMA.md` into Mongoose schemas (as shown in Section 2). Ensure correct indices are applied on keys queried in search filters (e.g., `mainGame`, `primaryRole`, `rank`, `verified` in `Player`).
+4. **Auth & Middleware Flow**: Implement JWT generation and token verification middleware (`protect`), along with the role checking middleware (`authorizeRoles`).
+5. **Controllers & Routing**: Re-write the endpoints detailed in `API_REFERENCE.md` into Express controllers. Group them logically (`authRoutes`, `playerRoutes`, etc.) and connect them to the Mongoose schemas.
+6. **Tests**: Use `jest` and `supertest` to run integration tests mimicking the Flask `pytest` tests inside `backend/tests`.
+
+### Phase B: Setup the Vite + React Frontend
+1. **Initialize Frontend**: Set up a React boilerplate in the workspace:
+   ```bash
+   npx -y create-vite@latest frontend --template react
+   cd frontend
+   npm install react-router-dom axios bootstrap bootstrap-icons socket.io-client
+   ```
+2. **Design Tokens & Custom CSS**: Copy existing stylesheets (`css/style.css`, `css/responsive.css`, `css/dashboard.css`, `css/enterprise.css`) into `src/assets/css` and import them in `main.jsx` to maintain LiyonForge's premium styling.
+3. **Core Services Layer**: Write a unified Axios client (`src/services/api.js`) featuring request/response interceptors to automatically insert the authentication token header:
+   ```javascript
+   import axios from 'axios';
+   const api = axios.create({ baseURL: 'http://localhost:5000/api/v1' });
+   api.interceptors.request.use((config) => {
+     const token = localStorage.getItem('token');
+     if (token) config.headers.Authorization = `Bearer ${token}`;
+     return config;
+   });
+   export default api;
+   ```
+4. **Contexts & Routing**: Initialize `AuthContext` to track logged-in users. Define routes using `react-router-dom` in `App.jsx` pointing to the main dashboards and profile views.
+5. **UI Refactoring**: Componentize recurring elements (sidebar navigation menus, command palettes, header bars, custom toast popups). Port static HTML files page-by-page into React pages, binding them to data retrieved via your services.
+
+### Phase C: Add WebSockets for Real-time Interactions
+1. **Chat & Notification Real-time Flow**: Initialize `socket.io` in Node.js and `socket.io-client` in React.
+2. **Wiring Connection**: When a user logs in, open a socket connection and join a room matching their `userId` to route private messages (`POST /messages`) and system notifications directly.
+
+---
+
+## 6. Verification & Validation Checklist
+
+Before going live with the migrated stack, verify the following:
+
+- [ ] **Bcrypt Hashing**: Ensure passwords saved in MongoDB are completely hashed and cannot be decrypted.
+- [ ] **JWT Security**: Confirm access tokens expire within 60 minutes, and routes verifying tokens return `401 Unauthorized` when headers are missing or invalid.
+- [ ] **Mongoose Validations**: Test unique constraints on `User.email`, `User.username`, and `Organization.slug`.
+- [ ] **Role Authorization**: Verify that a player attempting to access `/api/v1/organizations/:id/verify` or other moderator-restricted endpoints receives a `403 Forbidden` error.
+- [ ] **Pagination Consistency**: Make sure paginated search queries (like players or orgs listings) consistently output the object structure:
+  ```json
+  {
+    "results": [...],
+    "total": 12,
+    "page": 1,
+    "perPage": 10
+  }
+  ```
+- [ ] **Clean Clean-ups on Deletes**: When a team is disbanded (`DELETE /teams/:id`), confirm related players have their `team` field reset to `null` instead of cascade deleting the actual player document.
