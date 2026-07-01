@@ -11,7 +11,7 @@
     "prisma:format": "prisma format",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "prepare": "husky",
+    "prepare": "node -e \"try { require('child_process').execSync('husky', { stdio: 'inherit' }) } catch (e) {}\"",
     "typecheck": "tsc --noEmit",
     "db:seed": "prisma db seed"
   },
