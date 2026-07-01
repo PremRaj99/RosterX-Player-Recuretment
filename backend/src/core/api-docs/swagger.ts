@@ -18,8 +18,8 @@ export const generateOpenAPIDocument = () => {
     openapi: '3.0.0',
     info: {
       version: '1.0.0',
-      title: 'API Documentation For Physiobuddies',
-      description: 'API for backend services',
+      title: 'RosterX Player Recruitment API',
+      description: 'API Documentation for RosterX Player Recruitment platform',
     },
     servers: [{ url: `/api/v1` }],
   });
