@@ -15,67 +15,32 @@ datasource db {
 // ----------------------------------------------------------------------
 
 enum UserRole {
-  guest
   player
-  captain
-  manager
-  recruiter
-  org_admin
   organizer
-  sponsor
-  coach
-  analyst
-  moderator
-  platform_admin
 }
 
 enum UserStatus {
   active
-  suspended
-  banned
+  blocked
   deleted
-}
-
-enum ProfileVisibility {
-  public
-  followers
-  private
-}
-
-enum Theme {
-  dark
-  light
 }
 
 enum RecruitmentStatus {
   open
   closed
-  flagged
-  removed
 }
 
 enum ApplicationStatus {
   pending
   accepted
   rejected
-  withdrawn
-}
-
-enum SponsorshipStatus {
-  pending
-  approved
-  declined
-  active
-  completed
 }
 
 enum NotificationCategory {
-  recruitment
   applications
   messages
   teams
   organizations
-  sponsors
   tournaments
   platform
   security
@@ -87,26 +52,21 @@ enum NotificationCategory {
 // ----------------------------------------------------------------------
 
 type UserSettings {
-  profileVisibility   ProfileVisibility @default(public)
   showOnlineStatus     Boolean           @default(true)
   allowDirectMessages   Boolean           @default(true)
   showInSearch          Boolean           @default(true)
-  theme                 Theme             @default(dark)
-  language              String            @default("en")
-  region                String?
   notificationPrefs     NotificationPrefs
 }
 
 type NotificationPrefs {
-  recruitment   Boolean @default(true)
-  applications  Boolean @default(true)
-  messages      Boolean @default(true)
-  teams         Boolean @default(true)
+  applications Boolean @default(true)
+  messages Boolean @default(true)
+  teams Boolean @default(true)
   organizations Boolean @default(true)
-  sponsors      Boolean @default(true)
-  tournaments   Boolean @default(true)
-  platform      Boolean @default(true)
-  security      Boolean @default(true)
+  tournaments Boolean @default(true)
+  platform Boolean @default(true)
+  security Boolean @default(true)
+  verification Boolean @default(true)
 }
 
 type PlayerStats {
@@ -141,17 +101,13 @@ model User {
   role              UserRole             @default(player)
   emailVerified     Boolean              @default(false)
   phone             String?
-  phoneVerified     Boolean              @default(false)
-  avatarUrl         String?
   bio               String?
   country           String?
   status            UserStatus           @default(active)
-  twoFactorEnabled  Boolean              @default(false)
   settings          UserSettings
 
   playerProfile     Player?
   organizations     Organization[]
-  sponsorships      SponsorshipRequest[]
   
   // Relations for Chat/Messaging
   threadIds         String[]             @db.ObjectId
@@ -201,7 +157,6 @@ model Organization {
   teams        Team[]
   recruitments Recruitment[]
   applications Application[]
-  sponsorships SponsorshipRequest[]
 
   createdAt   DateTime             @default(now())
   updatedAt   DateTime             @updatedAt
@@ -249,21 +204,6 @@ model Application {
   player         Player            @relation(fields: [playerId], references: [id])
   message        String?
   status         ApplicationStatus @default(pending)
-  decidedAt      DateTime?
-
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
-}
-
-model SponsorshipRequest {
-  id             String            @id @default(auto()) @map("_id") @db.ObjectId
-  sponsorId      String            @db.ObjectId
-  sponsor        User              @relation(fields: [sponsorId], references: [id])
-  organizationId String            @db.ObjectId
-  organization   Organization      @relation(fields: [organizationId], references: [id])
-  value          String
-  durationMonths Int
-  status         SponsorshipStatus @default(pending)
   decidedAt      DateTime?
 
   createdAt      DateTime          @default(now())
